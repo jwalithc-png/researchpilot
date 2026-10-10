@@ -446,7 +446,7 @@ export default function App() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
             <span>Backend: n8n Workflow Automation</span>
             <span>Auth: Firebase Authentication</span>
-            <span>LLM: Ollama Cloud (gemma4:31b)</span>
+            <span>LLM: Google Gemini (3.5 Flash) & Ollama</span>
             <span>Search: SerpApi Engines</span>
           </div>
         </div>

@@ -24,7 +24,7 @@ import {
   sendChatMessage,
   getChatSettings,
   saveChatSettings,
-  DEFAULT_OLLAMA_KEY
+  DEFAULT_GEMINI_KEY
 } from '../utils/chatApi';
 
 export default function MiniChatbot({ reportData, activeTopic }) {
@@ -346,8 +346,8 @@ export default function MiniChatbot({ reportData, activeTopic }) {
                   <h3 style={{ fontSize: '0.92rem', fontWeight: 700, color: '#f8fafc', margin: 0 }}>
                     PilotBot
                   </h3>
-                  <span className="badge badge-emerald" style={{ fontSize: '0.65rem', padding: '1px 6px' }}>
-                    Ollama Connected
+                  <span className="badge badge-cyan" style={{ fontSize: '0.65rem', padding: '1px 6px' }}>
+                    Gemini 3.5 Active
                   </span>
                 </div>
                 <p style={{ fontSize: '0.72rem', color: '#94a3b8', margin: 0 }}>
@@ -444,7 +444,7 @@ export default function MiniChatbot({ reportData, activeTopic }) {
 
                 <div style={{ marginBottom: '8px' }}>
                   <label style={{ color: '#94a3b8', display: 'block', marginBottom: '3px', fontSize: '0.72rem' }}>
-                    Ollama API Key:
+                    Google Gemini API Key:
                   </label>
                   <input
                     type="password"
@@ -622,7 +622,7 @@ export default function MiniChatbot({ reportData, activeTopic }) {
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             {msg.modelUsed && (
                               <span style={{ fontSize: '0.65rem', color: '#67e8f9' }}>
-                                {msg.modelUsed.includes('gemma') ? 'gemma4:31b' : 'PilotBot'}
+                                {msg.modelUsed}
                               </span>
                             )}
                             <button
