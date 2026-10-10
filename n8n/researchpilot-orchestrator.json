@@ -1,0 +1,356 @@
+{
+  "id": "QgKsPgWL0VfRGPxj",
+  "name": "ResearchPilot — End-to-End Research Orchestrator",
+  "active": true,
+  "isArchived": false,
+  "versionId": "33764cfe-3ecc-4379-bbd3-c68bbaff3f86",
+  "activeVersionId": "33764cfe-3ecc-4379-bbd3-c68bbaff3f86",
+  "triggerCount": 1,
+  "nodeCount": 11,
+  "createdAt": "2026-10-10T06:20:51.876Z",
+  "updatedAt": "2026-10-10T06:20:51.876Z",
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "tags": [],
+  "parentFolderId": null,
+  "description": "ResearchPilot End-to-End Research Orchestrator connecting all 5 research phases into a unified production pipeline",
+  "scopes": [
+    "execution:reveal",
+    "workflow:create",
+    "workflow:delete",
+    "workflow:disableRedaction",
+    "workflow:enableRedaction",
+    "workflow:execute",
+    "workflow:execute-chat",
+    "workflow:export",
+    "workflow:import",
+    "workflow:list",
+    "workflow:move",
+    "workflow:publish",
+    "workflow:read",
+    "workflow:share",
+    "workflow:unpublish",
+    "workflow:unshare",
+    "workflow:update"
+  ],
+  "canExecute": true,
+  "connections": {
+    "Research Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Request & Build Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request & Build Context": {
+      "main": [
+        [
+          {
+            "node": "Invoke Downstream Research Engine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Invoke Downstream Research Engine": {
+      "main": [
+        [
+          {
+            "node": "Check Primary Succeeded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Primary Succeeded": {
+      "main": [
+        [
+          {
+            "node": "Assemble Primary Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Invoke Phase 2 Fallback Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Primary Report": {
+      "main": [
+        [
+          {
+            "node": "Return Primary Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Invoke Phase 2 Fallback Search": {
+      "main": [
+        [
+          {
+            "node": "Assemble Fallback Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Fallback Report": {
+      "main": [
+        [
+          {
+            "node": "Return Fallback Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Return 400 Bad Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "id": "b2ed0e7c-4b06-4b9c-9dc3-8b757e0d2e63",
+      "name": "Research Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        192
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "researchpilot-orchestrator",
+        "responseMode": "responseNode"
+      },
+      "webhookId": "d0c0eed8-957e-4a42-934b-e9d6355a8c6e"
+    },
+    {
+      "id": "c11fa8ee-2c2f-43ee-9212-b00d8b7d8682",
+      "name": "Validate Request & Build Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        192
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const items = $input.all();\nconst rawInput = items[0]?.json?.body || items[0]?.json || {};\nconst headers = items[0]?.json?.headers || {};\n\n// 1. Recursive call prevention\nif (headers['x-researchpilot-orchestrated'] === 'true' || headers['x-researchpilot-orchestrated'] === true) {\n  throw new Error('Validation Error: Recursive orchestration detected. Request rejected to prevent loops.');\n}\n\n// 2. Validate topic\nif (rawInput.topic === undefined || rawInput.topic === null) {\n  throw new Error('Validation Error: Missing required field \"topic\".');\n}\nif (typeof rawInput.topic !== 'string') {\n  throw new Error('Validation Error: \"topic\" must be a string.');\n}\nconst topic = rawInput.topic.trim();\nif (topic.length < 3 || topic.length > 250) {\n  throw new Error('Validation Error: \"topic\" length must be between 3 and 250 characters.');\n}\n\n// 3. Validate country & language\nlet country = 'in';\nif (rawInput.country !== undefined && rawInput.country !== null) {\n  if (typeof rawInput.country !== 'string') throw new Error('Validation Error: \"country\" must be an ISO code string.');\n  const cleanCountry = rawInput.country.trim().toLowerCase();\n  if (!/^[a-z]{2}$/.test(cleanCountry)) throw new Error('Validation Error: \"country\" must be a valid 2-letter ISO code.');\n  country = cleanCountry;\n}\n\nlet language = 'en';\nif (rawInput.language !== undefined && rawInput.language !== null) {\n  if (typeof rawInput.language !== 'string') throw new Error('Validation Error: \"language\" must be an ISO code string.');\n  const cleanLanguage = rawInput.language.trim().toLowerCase();\n  if (!/^[a-z]{2}(-[a-z]{2})?$/.test(cleanLanguage)) throw new Error('Validation Error: \"language\" must be a valid ISO language code.');\n  language = cleanLanguage;\n}\n\n// 4. Validate engines\nconst validEngineSet = new Set(['google', 'google_scholar', 'google_news', 'google_patents']);\nlet selectedEngines = ['google', 'google_scholar', 'google_news', 'google_patents'];\nif (Array.isArray(rawInput.engines)) {\n  if (rawInput.engines.length === 0) {\n    throw new Error('Validation Error: \"engines\" array must not be empty.');\n  }\n  const filtered = [];\n  const seen = new Set();\n  for (const e of rawInput.engines) {\n    if (typeof e === 'string') {\n      const norm = e.trim().toLowerCase();\n      if (validEngineSet.has(norm) && !seen.has(norm)) {\n        seen.add(norm);\n        filtered.push(norm);\n      }\n    }\n  }\n  if (filtered.length === 0) {\n    throw new Error('Validation Error: No valid engines specified. Supported: google, google_scholar, google_news, google_patents.');\n  }\n  selectedEngines = filtered;\n}\n\n// 5. Source Limits & Depth\nlet maxSources = 20;\nif (rawInput.maxSources !== undefined && rawInput.maxSources !== null) {\n  const num = Number(rawInput.maxSources);\n  if (!isNaN(num) && num >= 1 && num <= 100) {\n    maxSources = Math.floor(num);\n  }\n}\n\nlet researchDepth = 'deep';\nif (typeof rawInput.researchDepth === 'string') {\n  const d = rawInput.researchDepth.trim().toLowerCase();\n  if (['fast', 'standard', 'deep', 'search_only'].includes(d)) {\n    researchDepth = d;\n  }\n}\n\nconst includeDocuments = rawInput.includeDocuments !== false;\nconst confidenceThreshold = typeof rawInput.confidenceThreshold === 'number' ? rawInput.confidenceThreshold : 0.75;\nconst documents = Array.isArray(rawInput.documents) ? rawInput.documents : null;\n\n// 6. Generate Request ID\nconst requestId = 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9);\n\n// 7. Route to Downstream Phase\nlet primaryEndpoint = 'researchpilot-phase5';\nif (researchDepth === 'fast' || researchDepth === 'search_only') {\n  primaryEndpoint = 'researchpilot-phase2';\n} else if (researchDepth === 'standard') {\n  primaryEndpoint = includeDocuments ? 'researchpilot-phase4' : 'researchpilot-phase3';\n}\n\nconst primaryPayload = {\n  topic,\n  country,\n  language,\n  engines: selectedEngines\n};\n\nif (primaryEndpoint === 'researchpilot-phase5') {\n  primaryPayload.confidenceThreshold = confidenceThreshold;\n  if (documents) primaryPayload.documents = documents;\n} else if (primaryEndpoint === 'researchpilot-phase4') {\n  if (documents) primaryPayload.documents = documents;\n}\n\nconst fallbackPayload = {\n  topic,\n  country,\n  language,\n  engines: selectedEngines\n};\n\nreturn [{\n  json: {\n    requestId,\n    topic,\n    country,\n    language,\n    selectedEngines,\n    maxSources,\n    researchDepth,\n    includeDocuments,\n    confidenceThreshold,\n    primaryEndpoint,\n    primaryPayload,\n    fallbackPayload,\n    startedAt: Date.now()\n  }\n}];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "ea6f84d7-d032-4447-bf66-d9b711a9ad66",
+      "name": "Invoke Downstream Research Engine",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        448,
+        96
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://15.252.236.234.sslip.io/webhook/' + $json.primaryEndpoint }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.primaryPayload) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "{\"Content-Type\":\"application/json\",\"X-ResearchPilot-Orchestrated\":\"true\"}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "896c86d6-2774-4f3f-be0f-dabdc8b9dd8f",
+      "name": "Check Primary Succeeded",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        672,
+        96
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.success }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "45ce4782-af50-46b2-bc36-78d8cc7477fb",
+      "name": "Assemble Primary Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const item = $input.first()?.json || {};\nconst ctx = $('Validate Request & Build Context').first()?.json || {};\n\nconst topic = ctx.topic || 'Unknown Topic';\nconst requestId = ctx.requestId || 'req_unknown';\nconst maxSources = ctx.maxSources || 20;\nconst selectedEngines = ctx.selectedEngines || ['google'];\nconst researchDepth = ctx.researchDepth || 'deep';\nconst startedAt = ctx.startedAt || Date.now();\n\nconst isSuccess = item && (item.success === true || Array.isArray(item.sources));\nconst status = isSuccess ? 'completed' : 'partial';\n\nlet rawSources = [];\nif (Array.isArray(item?.externalIntelligence?.sources)) {\n  rawSources = item.externalIntelligence.sources;\n} else if (Array.isArray(item?.sources)) {\n  rawSources = item.sources;\n}\n\nlet docChunks = [];\nif (Array.isArray(item?.documentIntelligence?.retrievedChunks)) {\n  docChunks = item.documentIntelligence.retrievedChunks;\n}\n\nconst seenUrls = new Set();\nconst boundedSources = [];\nfor (const s of rawSources) {\n  const key = s.url || s.sourceId;\n  if (!seenUrls.has(key)) {\n    seenUrls.add(key);\n    boundedSources.push(s);\n    if (boundedSources.length >= maxSources) break;\n  }\n}\n\nlet executiveSummary = '';\nlet keyFindings = [];\nlet contradictions = [];\nlet researchGaps = [];\nlet limitations = [];\nlet claimCredibilityLedger = undefined;\nlet agenticReflection = undefined;\n\nif (item?.executiveSummary) {\n  executiveSummary = item.executiveSummary;\n} else if (item?.summary?.executiveSummary) {\n  executiveSummary = item.summary.executiveSummary;\n} else {\n  executiveSummary = 'Research synthesis for \"' + topic + '\" synthesized across ' + selectedEngines.join(', ') + '.';\n}\n\nif (Array.isArray(item?.claimCredibilityLedger)) {\n  claimCredibilityLedger = item.claimCredibilityLedger;\n  keyFindings = claimCredibilityLedger.map(c => c.claimText + (Array.isArray(c.citedSources) && c.citedSources.length > 0 ? (' [' + c.citedSources.join(', ') + ']') : ''));\n} else if (Array.isArray(item?.summary?.keyFindings)) {\n  keyFindings = item.summary.keyFindings;\n} else {\n  keyFindings = boundedSources.slice(0, 5).map(s => s.title + ': ' + (s.snippet || 'No snippet available') + ' [' + s.sourceId + ']');\n}\n\nif (Array.isArray(item?.contradictionMatrix)) {\n  contradictions = item.contradictionMatrix;\n} else if (Array.isArray(item?.summary?.alignmentsAndContradictions)) {\n  contradictions = item.summary.alignmentsAndContradictions;\n}\n\nif (Array.isArray(item?.summary?.researchGaps)) {\n  researchGaps = item.summary.researchGaps;\n} else if (Array.isArray(item?.agenticReflection?.actionableInsights)) {\n  researchGaps = item.agenticReflection.actionableInsights;\n}\n\nif (Array.isArray(item?.summary?.limitations)) {\n  limitations = item.summary.limitations;\n} else {\n  limitations = ['Findings grounded on multi-engine SerpApi search snippets and language model inference horizon.'];\n}\n\nif (item?.agenticReflection) {\n  agenticReflection = item.agenticReflection;\n}\n\nconst validSourceMap = new Set([\n  ...boundedSources.map(s => s.sourceId),\n  ...rawSources.map(s => s.sourceId),\n  ...docChunks.map(c => c.documentSourceId)\n]);\n\nconst reportBlob = JSON.stringify({ executiveSummary, keyFindings, contradictions });\nconst sMatches = reportBlob.match(/\\bS\\d{3}\\b/g) || [];\nconst dMatches = reportBlob.match(/\\bD\\d{3}\\b/g) || [];\nconst allCitations = [...sMatches, ...dMatches];\nconst uniqueFoundCitations = Array.from(new Set(allCitations));\n\nconst validCitations = [];\nconst invalidCitationIds = [];\n\nfor (const cid of uniqueFoundCitations) {\n  if (validSourceMap.has(cid)) {\n    validCitations.push(cid);\n  } else {\n    invalidCitationIds.push(cid);\n  }\n}\n\nlet unsupportedClaimCount = 0;\nif (Array.isArray(claimCredibilityLedger)) {\n  for (const c of claimCredibilityLedger) {\n    const cited = c.citedSources || [];\n    const hasInvalid = cited.some(id => !validSourceMap.has(id));\n    if (hasInvalid) unsupportedClaimCount++;\n  }\n}\n\nconst citationValidation = {\n  valid: invalidCitationIds.length === 0,\n  invalidCitationIds,\n  unsupportedClaimCount,\n  totalCitations: allCitations.length,\n  uniqueSourcesCited: validCitations.length,\n  groundingIntegrity: invalidCitationIds.length === 0 ? '100% Grounded' : 'Partially Grounded'\n};\n\nreturn [{\n  json: {\n    success: true,\n    requestId,\n    topic,\n    status,\n    report: {\n      executiveSummary,\n      keyFindings,\n      contradictions,\n      researchGaps,\n      limitations,\n      claimCredibilityLedger,\n      agenticReflection\n    },\n    sources: boundedSources,\n    metadata: {\n      enginesUsed: selectedEngines,\n      sourceCount: boundedSources.length,\n      maxSourcesConfigured: maxSources,\n      researchDepth,\n      confidenceIndex: item?.confidenceIndex || null,\n      citationValidation,\n      orchestration: {\n        primaryPhase: ctx.primaryEndpoint,\n        executedPhase: ctx.primaryEndpoint,\n        fallbackEngaged: false,\n        executionTimeMs: Date.now() - startedAt\n      }\n    },\n    errors: []\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "ecd84298-c87e-4f91-a77e-53ade3fdbfd1",
+      "name": "Return Primary Report",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1120,
+        0
+      ],
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "53e908b7-5dee-4af7-a3fe-4dab94efb725",
+      "name": "Invoke Phase 2 Fallback Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        896,
+        192
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://15.252.236.234.sslip.io/webhook/researchpilot-phase2",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Validate Request & Build Context').first()?.json?.fallbackPayload || { topic: 'fallback' }) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "{\"Content-Type\":\"application/json\",\"X-ResearchPilot-Orchestrated\":\"true\"}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "d2d7b130-d058-435f-90a8-452008a9ee64",
+      "name": "Assemble Fallback Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        192
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const item = $input.first()?.json || {};\nconst ctx = $('Validate Request & Build Context').first()?.json || {};\n\nconst topic = ctx.topic || 'Unknown Topic';\nconst requestId = ctx.requestId || 'req_unknown';\nconst maxSources = ctx.maxSources || 20;\nconst selectedEngines = ctx.selectedEngines || ['google'];\nconst researchDepth = ctx.researchDepth || 'deep';\nconst startedAt = ctx.startedAt || Date.now();\n\nlet rawSources = [];\nif (Array.isArray(item?.sources)) {\n  rawSources = item.sources;\n}\n\nconst seenUrls = new Set();\nconst boundedSources = [];\nfor (const s of rawSources) {\n  const key = s.url || s.sourceId;\n  if (!seenUrls.has(key)) {\n    seenUrls.add(key);\n    boundedSources.push(s);\n    if (boundedSources.length >= maxSources) break;\n  }\n}\n\nconst executiveSummary = boundedSources.length > 0\n  ? 'Fallback multi-engine evidence retrieved for \"' + topic + '\". Downstream intelligence agent experienced an upstream timeout or interruption; returning verified raw multi-engine search sources.'\n  : 'Search services returned no results for \"' + topic + '\". Please try broader terms or select different engines.';\n\nconst keyFindings = boundedSources.slice(0, 5).map(s => s.title + ': ' + (s.snippet || 'No snippet available') + ' [' + s.sourceId + ']');\n\nconst citationValidation = {  valid: true,\n  invalidCitationIds: [],\n  unsupportedClaimCount: 0,\n  totalCitations: keyFindings.length,\n  uniqueSourcesCited: boundedSources.slice(0, 5).length,\n  groundingIntegrity: '100% Grounded'\n};\n\nreturn [{\n  json: {\n    success: boundedSources.length > 0,\n    requestId,\n    topic,\n    status: boundedSources.length > 0 ? 'partial' : 'failed',\n    report: {\n      executiveSummary,\n      keyFindings,\n      contradictions: [],\n      researchGaps: ['Deep AI synthesis uncompleted due to downstream phase fallback.'],\n      limitations: ['Raw search results only; advanced LLM reflection omitted.']\n    },\n    sources: boundedSources,\n    metadata: {\n      enginesUsed: selectedEngines,\n      sourceCount: boundedSources.length,\n      maxSourcesConfigured: maxSources,\n      researchDepth,\n      confidenceIndex: {\n        score: boundedSources.length > 0 ? 0.65 : 0.0,\n        rating: boundedSources.length > 0 ? 'PARTIAL EVIDENCE (RAW SEARCH)' : 'NO EVIDENCE FOUND',\n        status: 'FALLBACK_ENGAGED'\n      },\n      citationValidation,\n      orchestration: {\n        primaryPhase: ctx.primaryEndpoint,\n        executedPhase: 'researchpilot-phase2 (fallback)',\n        fallbackEngaged: true,\n        executionTimeMs: Date.now() - startedAt\n      }\n    },\n    errors: [\n      'Primary phase (' + ctx.primaryEndpoint + ') failed or timed out. Graceful fallback to Phase 2 multi-engine search was automatically engaged.'\n    ]\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "e794fb07-6cfe-427d-9745-f7dc507391ae",
+      "name": "Return Fallback Report",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1344,
+        192
+      ],
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "0817248a-09e3-439f-ba85-8baf14af99d9",
+      "name": "Format Validation Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        288
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const raw = $input.first()?.json || {};\nconst errorMsg = typeof raw.error === 'string'\n  ? raw.error\n  : (raw.error?.message || raw.message || 'Validation Error: Invalid input parameters.');\nconst cleanMsg = errorMsg.replace(/\\s*\\[line\\s+\\d+\\]$/, '').replace(/^Error:\\s*/, '');\n\nreturn [{\n  json: {\n    success: false,\n    requestId: 'req_rejected',\n    status: 'failed',\n    error: {\n      code: 'INVALID_INPUT',\n      message: cleanMsg,\n      details: 'Topic must be a non-empty string between 3 and 250 characters. Country and language must be valid ISO codes. Supported engines: google, google_scholar, google_news, google_patents.'\n    },\n    limitations: [\n      'Request rejected at orchestrator boundary before downstream phase invocation.'\n    ]\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "b20d17fb-25bc-4ed7-9a86-9d2b78c15af8",
+      "name": "Return 400 Bad Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        672,
+        288
+      ],
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 400
+        }
+      }
+    }
+  ],
+  "nodeGroups": [],
+  "activeVersion": {
+    "sameAsDraft": true
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  }
+}

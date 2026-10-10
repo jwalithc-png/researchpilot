@@ -1,0 +1,197 @@
+{
+  "name": "ResearchPilot — Phase 2 Multi-Engine Search",
+  "nodes": [
+    {
+      "id": "c92e48a0-0742-4ed7-adb8-24a06a3a93da",
+      "name": "Research Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        96
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "researchpilot-phase2",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "48886cf5-3b85-4b70-8ed8-8b6b6985e148"
+    },
+    {
+      "id": "f330fc03-d16c-47f2-8d7c-705c4a8d1966",
+      "name": "Validate Input and Route Engines",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        96
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "\nconst items = $input.all();\nconst rawInput = items[0]?.json?.body || items[0]?.json || {};\n\nif (rawInput.topic === undefined || rawInput.topic === null) {\n  throw new Error('Validation Error: Missing required field \"topic\".');\n}\n\nif (typeof rawInput.topic !== 'string') {\n  throw new Error('Validation Error: \"topic\" must be a string.');\n}\n\nconst topic = rawInput.topic.trim();\nif (topic.length < 3 || topic.length > 250) {\n  throw new Error(`Validation Error: \"topic\" length must be between 3 and 250 characters (received ${topic.length}).`);\n}\n\nlet country = 'in';\nif (rawInput.country !== undefined && rawInput.country !== null) {\n  if (typeof rawInput.country !== 'string') {\n    throw new Error('Validation Error: \"country\" must be a 2-letter ISO country code string.');\n  }\n  const cleanCountry = rawInput.country.trim().toLowerCase();\n  if (!/^[a-z]{2}$/.test(cleanCountry)) {\n    throw new Error(`Validation Error: \"country\" must be a valid 2-letter ISO code (e.g. \"in\", \"us\"). Received: \"${rawInput.country}\".`);\n  }\n  country = cleanCountry;\n}\n\nlet language = 'en';\nif (rawInput.language !== undefined && rawInput.language !== null) {\n  if (typeof rawInput.language !== 'string') {\n    throw new Error('Validation Error: \"language\" must be a valid ISO language code string.');\n  }\n  const cleanLanguage = rawInput.language.trim().toLowerCase();\n  if (!/^[a-z]{2}(-[a-z]{2})?$/.test(cleanLanguage)) {\n    throw new Error(`Validation Error: \"language\" must be a valid language code (e.g. \"en\", \"hi\"). Received: \"${rawInput.language}\".`);\n  }\n  language = cleanLanguage;\n}\n\n// Allowed engines\nconst validEngineSet = new Set(['google', 'google_scholar', 'google_news', 'google_patents']);\nlet selectedEngines = ['google'];\n\nif (Array.isArray(rawInput.engines) && rawInput.engines.length > 0) {\n  const filtered = [];\n  const seen = new Set();\n  for (const e of rawInput.engines) {\n    if (typeof e === 'string') {\n      const norm = e.trim().toLowerCase();\n      if (validEngineSet.has(norm) && !seen.has(norm)) {\n        seen.add(norm);\n        filtered.push(norm);\n      }\n    }\n  }\n  if (filtered.length > 0) {\n    selectedEngines = filtered;\n  }\n}\n\nconst routeItems = [];\nfor (const eng of selectedEngines) {\n  let queryParams = {\n    engine: eng,\n    q: topic\n  };\n\n  if (eng === 'google') {\n    queryParams.gl = country;\n    queryParams.hl = language;\n    queryParams.num = '10';\n  } else if (eng === 'google_scholar') {\n    queryParams.hl = language;\n    queryParams.num = '10';\n  } else if (eng === 'google_news') {\n    queryParams.gl = country;\n    queryParams.hl = language;\n  } else if (eng === 'google_patents') {\n    queryParams.num = '10';\n  }\n\n  routeItems.push({\n    json: {\n      topic,\n      country,\n      language,\n      engine: eng,\n      selectedEngines,\n      queryParams,\n      validatedAt: new Date().toISOString()\n    }\n  });\n}\n\nreturn routeItems;\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "207ba337-0290-4202-b3db-aa7ba7e8eb6f",
+      "name": "SerpApi Multi-Engine Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://serpapi.com/search.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "specifyQuery": "json",
+        "jsonQuery": "={{ JSON.stringify($json.queryParams) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "Yujaads2Z0tyVwm0",
+          "name": "SerpApi Query Auth"
+        }
+      }
+    },
+    {
+      "id": "7335849c-65a0-4370-8546-5e909d628b65",
+      "name": "Normalize Multi-Engine Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "\nconst allInputs = $input.all();\nconst validatedContext = $('Validate Input and Route Engines').first()?.json || {};\n\nconst topic = validatedContext.topic || 'Unknown Topic';\nconst country = validatedContext.country || 'in';\nconst language = validatedContext.language || 'en';\nconst selectedEngines = validatedContext.selectedEngines || ['google'];\n\nfunction normalizeUrl(rawUrl) {\n  if (!rawUrl || typeof rawUrl !== 'string') return null;\n  var str = rawUrl.trim();\n  if (!/^https?:\\/\\//i.test(str)) return null;\n  \n  var clean = str.split('#')[0];\n  var qIndex = clean.indexOf('?');\n  if (qIndex === -1) {\n    return clean.replace(/\\/+$/, '');\n  }\n  \n  var baseUrl = clean.slice(0, qIndex).replace(/\\/+$/, '');\n  var queryStr = clean.slice(qIndex + 1);\n  var tracking = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'fbclid', 'ref', 'ocid', 'mc_cid', 'mc_eid', '_hsenc', '_hsmi'];\n  \n  var keptParams = [];\n  var pairs = queryStr.split('&');\n  for (var i = 0; i < pairs.length; i++) {\n    var pair = pairs[i];\n    if (!pair) continue;\n    var key = pair.split('=')[0].toLowerCase();\n    if (tracking.indexOf(key) === -1) {\n      keptParams.push(pair);\n    }\n  }\n  \n  return keptParams.length > 0 ? (baseUrl + '?' + keptParams.join('&')) : baseUrl;\n}\n\nconst engineBreakdown = {\n  google: 0,\n  google_scholar: 0,\n  google_news: 0,\n  google_patents: 0\n};\nconst engineErrors = [];\nconst allExtracted = [];\n\nfor (const item of allInputs) {\n  const json = item.json || {};\n  \n  // Check for error on this engine request\n  if (json.error) {\n    const failedEngine = json.queryParams?.engine || json.engine || 'unknown';\n    engineErrors.push({\n      engine: failedEngine,\n      message: typeof json.error === 'string' ? json.error : (json.error.message || 'Engine search failed')\n    });\n    continue;\n  }\n\n  const engine = json.search_parameters?.engine || json.engine || 'google';\n\n  if (engine === 'google') {\n    const org = json.organic_results || [];\n    for (const r of org) {\n      allExtracted.push({\n        engine: 'google',\n        title: (r.title || '').trim(),\n        url: r.link,\n        normalizedUrl: normalizeUrl(r.link),\n        snippet: (r.snippet || '').trim(),\n        displayedLink: r.displayed_link || null,\n        publicationDate: r.date || null,\n        position: r.position || null,\n        authors: null,\n        publication: r.source || null,\n        citationCount: null,\n        patentNumber: null,\n        inventors: null,\n        assignee: null,\n        filingDate: null,\n        patentPublicationDate: null,\n        pdfUrl: null,\n        fullDocumentUrl: r.link || null,\n        metadata: {\n          source: r.source || null,\n          displayedLink: r.displayed_link || null,\n          favicon: r.favicon || null\n        }\n      });\n      engineBreakdown.google++;\n    }\n  } else if (engine === 'google_scholar') {\n    const org = json.organic_results || [];\n    for (const r of org) {\n      let authors = null;\n      let publication = null;\n      if (r.publication_info) {\n        if (Array.isArray(r.publication_info.authors)) {\n          authors = r.publication_info.authors.map(a => a.name).filter(Boolean);\n        }\n        publication = r.publication_info.summary || null;\n      }\n\n      let citationCount = null;\n      if (r.inline_links && r.inline_links.cited_by && typeof r.inline_links.cited_by.total === 'number') {\n        citationCount = r.inline_links.cited_by.total;\n      }\n\n      let pdfUrl = null;\n      if (Array.isArray(r.resources)) {\n        const pdfRes = r.resources.find(res => res.file_format === 'PDF' && res.link);\n        if (pdfRes) pdfUrl = pdfRes.link;\n      }\n\n      allExtracted.push({\n        engine: 'google_scholar',\n        title: (r.title || '').trim(),\n        url: r.link || pdfUrl,\n        normalizedUrl: normalizeUrl(r.link || pdfUrl),\n        snippet: (r.snippet || '').trim(),\n        displayedLink: null,\n        publicationDate: null,\n        position: r.position || null,\n        authors: authors && authors.length > 0 ? authors : null,\n        publication: publication,\n        citationCount: citationCount,\n        patentNumber: null,\n        inventors: null,\n        assignee: null,\n        filingDate: null,\n        patentPublicationDate: null,\n        pdfUrl: pdfUrl,\n        fullDocumentUrl: r.link || null,\n        metadata: {\n          resultId: r.result_id || null,\n          publicationInfo: r.publication_info || null\n        }\n      });\n      engineBreakdown.google_scholar++;\n    }\n  } else if (engine === 'google_news') {\n    const news = json.news_results || [];\n    for (const r of news) {\n      allExtracted.push({\n        engine: 'google_news',\n        title: (r.title || '').trim(),\n        url: r.link,\n        normalizedUrl: normalizeUrl(r.link),\n        snippet: (r.snippet || r.title || '').trim(),\n        displayedLink: null,\n        publicationDate: r.iso_date || r.date || null,\n        position: r.position || null,\n        authors: Array.isArray(r.source?.authors) ? r.source.authors : null,\n        publication: r.source?.name || null,\n        citationCount: null,\n        patentNumber: null,\n        inventors: null,\n        assignee: null,\n        filingDate: null,\n        patentPublicationDate: null,\n        pdfUrl: null,\n        fullDocumentUrl: r.link || null,\n        metadata: {\n          source: r.source || null,\n          thumbnail: r.thumbnail || null\n        }\n      });\n      engineBreakdown.google_news++;\n    }\n  } else if (engine === 'google_patents') {\n    const org = json.organic_results || [];\n    for (const r of org) {\n      const patentNumber = r.publication_number || (r.patent_id ? r.patent_id.replace(/^patent\\//, '').replace(/\\/en$/, '') : null);\n      let inventors = null;\n      if (r.inventor) {\n        inventors = Array.isArray(r.inventor) ? r.inventor : [r.inventor];\n      }\n      const assignee = r.assignee || null;\n      const sourceUrl = r.pdf || (patentNumber ? `https://patents.google.com/patent/${patentNumber}/en` : r.patent_link);\n\n      allExtracted.push({\n        engine: 'google_patents',\n        title: (r.title || '').trim(),\n        url: sourceUrl,\n        normalizedUrl: normalizeUrl(sourceUrl),\n        snippet: (r.snippet || '').trim(),\n        displayedLink: null,\n        publicationDate: r.publication_date || null,\n        position: r.position || null,\n        authors: inventors,\n        publication: assignee ? `Assignee: ${assignee}` : null,\n        citationCount: null,\n        patentNumber: patentNumber,\n        inventors: inventors,\n        assignee: assignee,\n        filingDate: r.filing_date || null,\n        patentPublicationDate: r.publication_date || null,\n        pdfUrl: r.pdf || null,\n        fullDocumentUrl: sourceUrl,\n        metadata: {\n          patentId: r.patent_id || null,\n          countryStatus: r.country_status || null\n        }\n      });\n      engineBreakdown.google_patents++;\n    }\n  }\n}\n\n// Cross-engine deduplication\nconst normalizedMap = new Map();\nfor (const item of allExtracted) {\n  if (!item.normalizedUrl) continue;\n  const score = (item.snippet || '').length + (item.title || '').length + (item.publicationDate ? 30 : 0) + (item.pdfUrl ? 50 : 0) + (item.citationCount ? 40 : 0);\n  if (!normalizedMap.has(item.normalizedUrl) || normalizedMap.get(item.normalizedUrl)._score < score) {\n    item._score = score;\n    normalizedMap.set(item.normalizedUrl, item);\n  }\n}\n\nconst finalSources = Array.from(normalizedMap.values()).map((item, idx) => {\n  const sourceId = 'S' + String(idx + 1).padStart(3, '0');\n  delete item._score;\n  delete item.normalizedUrl;\n  return {\n    sourceId,\n    ...item\n  };\n});\n\nreturn [{\n  json: {\n    success: true,\n    topic,\n    selectedEngines,\n    totalSources: finalSources.length,\n    engineBreakdown,\n    sources: finalSources,\n    metadata: {\n      searchParameters: {\n        topic,\n        country,\n        language,\n        engines: selectedEngines\n      },\n      engineErrors,\n      processedAt: new Date().toISOString()\n    },\n    limitations: [\n      'Search snippets, abstracts, and patent overviews are preliminary evidence.',\n      'Full documents and PDFs have not necessarily been retrieved or verified.'\n    ]\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "462226a3-41a6-4850-872b-1a3a9057d357",
+      "name": "Return Multi-Engine Results",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        896,
+        0
+      ],
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "d9c0be34-b918-4b58-aa5b-dc3b13915063",
+      "name": "Format Validation Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        192
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "\nconst raw = $input.first()?.json || {};\nconst errorMsg = typeof raw.error === 'string'\n  ? raw.error\n  : (raw.error?.message || raw.message || 'Validation Error: Invalid input parameters.');\nconst cleanMsg = errorMsg.replace(/\\s*\\[line\\s+\\d+\\]$/, '').replace(/^Error:\\s*/, '');\n\nreturn [{\n  json: {\n    success: false,\n    error: {\n      code: 'INVALID_INPUT',\n      message: cleanMsg,\n      details: 'Topic must be a non-empty string between 3 and 250 characters. Country and language must be valid ISO codes. Supported engines: google, google_scholar, google_news, google_patents.'\n    },\n    limitations: [\n      'Request rejected before external search execution.'\n    ]\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "caaf9c11-54ac-480c-8fae-4f1f167008de",
+      "name": "Return 400 Bad Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        672,
+        192
+      ],
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 400
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Research Request": {
+      "main": [
+        [
+          {
+            "node": "Validate Input and Route Engines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input and Route Engines": {
+      "main": [
+        [
+          {
+            "node": "SerpApi Multi-Engine Search",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SerpApi Multi-Engine Search": {
+      "main": [
+        [
+          {
+            "node": "Normalize Multi-Engine Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Multi-Engine Results": {
+      "main": [
+        [
+          {
+            "node": "Return Multi-Engine Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Return 400 Bad Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  }
+}

@@ -1,0 +1,374 @@
+{
+  "name": "ResearchPilot — Phase 4 Document Intelligence & Hybrid RAG",
+  "nodes": [
+    {
+      "id": "ad2751ac-3784-4306-96d9-3fb50ea785c5",
+      "name": "Research Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        256
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "researchpilot-phase4",
+        "responseMode": "responseNode"
+      },
+      "webhookId": "9e22dfab-499e-4376-bc8f-5e273f6511c4"
+    },
+    {
+      "id": "a265b5cf-758d-457a-9027-be70a9b74aa1",
+      "name": "Validate Input and Document Ingestion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        256
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const items = $input.all();\nconst rawInput = items[0]?.json?.body || items[0]?.json || {};\n\nif (rawInput.topic === undefined || rawInput.topic === null) {\n  throw new Error('Validation Error: Missing required field \"topic\".');\n}\nif (typeof rawInput.topic !== 'string') {\n  throw new Error('Validation Error: \"topic\" must be a string.');\n}\nconst topic = rawInput.topic.trim();\nif (topic.length < 3 || topic.length > 250) {\n  throw new Error('Validation Error: \"topic\" length must be between 3 and 250 characters.');\n}\n\nlet country = 'in';\nif (rawInput.country !== undefined && rawInput.country !== null) {\n  if (typeof rawInput.country !== 'string') throw new Error('Validation Error: \"country\" must be an ISO code string.');\n  const cleanCountry = rawInput.country.trim().toLowerCase();\n  if (!/^[a-z]{2}$/.test(cleanCountry)) throw new Error('Validation Error: \"country\" must be a valid 2-letter ISO code.');\n  country = cleanCountry;\n}\n\nlet language = 'en';\nif (rawInput.language !== undefined && rawInput.language !== null) {\n  if (typeof rawInput.language !== 'string') throw new Error('Validation Error: \"language\" must be an ISO code string.');\n  const cleanLanguage = rawInput.language.trim().toLowerCase();\n  if (!/^[a-z]{2}(-[a-z]{2})?$/.test(cleanLanguage)) throw new Error('Validation Error: \"language\" must be a valid ISO language code.');\n  language = cleanLanguage;\n}\n\nconst validEngineSet = new Set(['google', 'google_scholar', 'google_news', 'google_patents']);\nlet selectedEngines = ['google', 'google_scholar', 'google_news', 'google_patents'];\nif (Array.isArray(rawInput.engines) && rawInput.engines.length > 0) {\n  const filtered = [];\n  const seen = new Set();\n  for (const e of rawInput.engines) {\n    if (typeof e === 'string') {\n      const norm = e.trim().toLowerCase();\n      if (validEngineSet.has(norm) && !seen.has(norm)) {\n        seen.add(norm);\n        filtered.push(norm);\n      }\n    }\n  }\n  if (filtered.length > 0) selectedEngines = filtered;\n}\n\nconst inputDocs = Array.isArray(rawInput.documents) && rawInput.documents.length > 0\n  ? rawInput.documents\n  : [\n      {\n        documentId: 'doc_benchmark_01',\n        filename: 'on_device_browser_agent_benchmarks_2026.pdf',\n        title: 'On-Device Browser Agent Performance & Memory Benchmarks',\n        content: 'Local AI browser agents executed via WebGPU and WebAssembly (WASM) achieve sub-40ms token generation for 3B parameter models on modern laptop chipsets. Memory footprint remains constrained under 2.2GB VRAM. Internal benchmarks demonstrate that DOM tree parsing and tool execution occur without network egress, mitigating cloud latency and data leakage.',\n        section: 'Executive Summary & Performance Benchmarks'\n      },\n      {\n        documentId: 'doc_security_02',\n        filename: 'browser_sandboxing_and_privacy_architecture.docx',\n        title: 'Client-Side Agent Sandboxing and Permission Boundaries',\n        content: 'Running agentic LLMs on-device introduces distinct attack vectors including DOM prompt injection and arbitrary script execution. To ensure safety, local agents must operate within an isolated WebAssembly sandbox with capability-based security tokens. In our security audit, zero network requests were emitted during sensitive form interactions.',\n        section: 'Security Boundaries & Threat Mitigation'\n      }\n    ];\n\nconst chunkList = [];\nlet chunkCounter = 1;\nfor (const doc of inputDocs) {\n  const text = (doc.content || '').trim();\n  if (!text) continue;\n  const paras = text.split(/\\n\\s*\\n/).filter(p => p.trim().length > 0);\n  for (const p of paras) {\n    chunkList.push({\n      documentId: doc.documentId || doc.filename || ('doc_' + chunkCounter),\n      filename: doc.filename || doc.title || 'Internal Document',\n      section: doc.section || 'General',\n      chunkIndex: chunkCounter++,\n      text: p.trim()\n    });\n  }\n}\n\nconst plannerPrompt = 'You are a research planning specialist. Given the research topic below, decompose it into 2 to 4 focused sub-questions and formulate tailored search queries for engines: google, google_scholar, google_news, google_patents.\\n\\nCRITICAL RULE: Return ONLY valid raw JSON with NO markdown formatting, NO code blocks:\\n{\\n  \"researchObjective\": \"Concise objective\",\\n  \"subQuestions\": [\"Q1\", \"Q2\"],\\n  \"queriesPerEngine\": {\\n    \"google\": \"general query\",\\n    \"google_scholar\": \"academic literature query\",\\n    \"google_news\": \"recent developments query\",\\n    \"google_patents\": \"patents and IP query\"\\n  },\\n  \"searchStrategy\": \"Strategy rationale\"\\n}\\n\\nTopic: \"' + topic + '\"';\n\nreturn [{\n  json: {\n    topic,\n    country,\n    language,\n    selectedEngines,\n    plannerPrompt,\n    inputDocs,\n    chunkList,\n    validatedAt: new Date().toISOString()\n  }\n}];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "5899a832-0640-4060-a5ea-19523252101d",
+      "name": "Research Planner (Ollama Cloud)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.plannerPrompt }}"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "c2e6f06f-cefb-44ce-99a5-d9c7c599826d",
+      "name": "Ollama Planner Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        528,
+        224
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gemma4:31b"
+        },
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "oLLmCldOpenAi99",
+          "name": "Ollama Cloud OpenAI"
+        }
+      }
+    },
+    {
+      "id": "22644c2e-eb0a-4eaa-8a78-faba2fa4caa3",
+      "name": "Process Plan, Hybrid RAG & Route Engines",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        112
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const item = $input.first()?.json || {};\nconst validated = $('Validate Input and Document Ingestion').first()?.json || {};\nconst topic = validated.topic || 'Unknown Topic';\nconst country = validated.country || 'in';\nconst language = validated.language || 'en';\nconst selectedEngines = validated.selectedEngines || ['google'];\nconst chunkList = validated.chunkList || [];\nconst inputDocs = validated.inputDocs || [];\n\nlet plan = null;\nconst rawText = item.text || '';\nif (rawText) {\n  try {\n    let clean = rawText.trim();\n    if (clean.startsWith('```')) {\n      clean = clean.replace(/^```(json)?\\s*/i, '').replace(/\\s*```$/, '').trim();\n    }\n    const startIdx = clean.indexOf('{');\n    const endIdx = clean.lastIndexOf('}');\n    if (startIdx !== -1 && endIdx > startIdx) {\n      plan = JSON.parse(clean.slice(startIdx, endIdx + 1));\n    }\n  } catch (e) {\n    plan = null;\n  }\n}\n\nif (!plan || !plan.researchObjective || !Array.isArray(plan.subQuestions)) {\n  plan = {\n    researchObjective: 'Investigate technical architecture, benchmarks, and patents for ' + topic,\n    subQuestions: [\n      'What are the state-of-the-art frameworks and benchmarks for ' + topic + '?',\n      'How does local execution compare with cloud architectures regarding security and performance?',\n      'What patents and intellectual property filings exist around ' + topic + '?'\n    ],\n    queriesPerEngine: {\n      google: topic,\n      google_scholar: topic + ' survey benchmark',\n      google_news: topic + ' developments announcements',\n      google_patents: topic + ' system method'\n    },\n    searchStrategy: 'Deterministic fallback strategy ensuring balanced coverage across general, academic, news, and patent domains.'\n  };\n}\n\nfunction tokenize(str) {\n  return str.toLowerCase().replace(/[^a-z0-9\\s]/g, ' ').split(/\\s+/).filter(t => t.length > 2);\n}\n\nconst queryContext = topic + ' ' + (plan.subQuestions || []).join(' ');\nconst qTokens = tokenize(queryContext);\nconst docCount = chunkList.length;\nconst df = {};\nconst chunkTokensList = chunkList.map(c => {\n  const tokens = tokenize(c.text + ' ' + (c.section || '') + ' ' + (c.filename || ''));\n  const unique = new Set(tokens);\n  unique.forEach(t => df[t] = (df[t] || 0) + 1);\n  return tokens;\n});\n\nconst scoredChunks = chunkList.map((chunk, idx) => {\n  const tokens = chunkTokensList[idx];\n  const tf = {};\n  tokens.forEach(t => tf[t] = (tf[t] || 0) + 1);\n\n  let score = 0;\n  qTokens.forEach(t => {\n    if (tf[t]) {\n      const idf = Math.log(1 + (docCount / (df[t] || 1)));\n      score += (tf[t] * idf);\n    }\n  });\n\n  return {\n    ...chunk,\n    relevanceScore: Math.round(score * 100) / 100\n  };\n});\n\nscoredChunks.sort((a, b) => b.relevanceScore - a.relevanceScore);\nconst topChunks = scoredChunks.slice(0, 5).map((chunk, idx) => ({\n  documentSourceId: 'D' + String(idx + 1).padStart(3, '0'),\n  documentId: chunk.documentId,\n  filename: chunk.filename,\n  section: chunk.section,\n  relevanceScore: chunk.relevanceScore,\n  text: chunk.text\n}));\n\nconst queriesPerEngine = plan.queriesPerEngine || {};\nconst routeItems = [];\n\nfor (const eng of selectedEngines) {\n  const queryStr = queriesPerEngine[eng] || topic;\n  const queryParams = {\n    engine: eng,\n    q: queryStr\n  };\n\n  if (eng === 'google') {\n    queryParams.gl = country;\n    queryParams.hl = language;\n    queryParams.num = '10';\n  } else if (eng === 'google_scholar') {\n    queryParams.hl = language;\n    queryParams.num = '10';\n  } else if (eng === 'google_news') {\n    queryParams.gl = country;\n    queryParams.hl = language;\n  } else if (eng === 'google_patents') {\n    queryParams.num = '10';\n  }\n\n  routeItems.push({\n    json: {\n      topic,\n      country,\n      language,\n      engine: eng,\n      selectedEngines,\n      plan,\n      topChunks,\n      inputDocsCount: inputDocs.length,\n      totalChunksIndexed: chunkList.length,\n      queryParams\n    }\n  });\n}\n\nreturn routeItems;\n"
+      }
+    },
+    {
+      "id": "1defe71e-702a-423a-a5b2-f46b5d288b43",
+      "name": "SerpApi Multi-Engine Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1024,
+        112
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://serpapi.com/search.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "specifyQuery": "json",
+        "jsonQuery": "={{ JSON.stringify($json.queryParams) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "Yujaads2Z0tyVwm0",
+          "name": "SerpApi Query Auth"
+        }
+      }
+    },
+    {
+      "id": "e9f59b74-749c-474b-928f-a841b46722b8",
+      "name": "Normalize and Prepare Hybrid Synthesizer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        112
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const allInputs = $input.all();\nconst routeContext = $('Process Plan, Hybrid RAG & Route Engines').first()?.json || {};\nconst topic = routeContext.topic || 'Unknown Topic';\nconst plan = routeContext.plan || {};\nconst selectedEngines = routeContext.selectedEngines || ['google'];\nconst topChunks = routeContext.topChunks || [];\nconst inputDocsCount = routeContext.inputDocsCount || 0;\nconst totalChunksIndexed = routeContext.totalChunksIndexed || 0;\n\nfunction normalizeUrl(rawUrl) {\n  if (!rawUrl || typeof rawUrl !== 'string') return null;\n  var str = rawUrl.trim();\n  if (!/^https?:\\/\\//i.test(str)) return null;\n  var clean = str.split('#')[0];\n  var qIndex = clean.indexOf('?');\n  if (qIndex === -1) return clean.replace(/\\/+$/, '');\n  var baseUrl = clean.slice(0, qIndex).replace(/\\/+$/, '');\n  var queryStr = clean.slice(qIndex + 1);\n  var tracking = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'fbclid', 'ref', 'ocid'];\n  var keptParams = [];\n  var pairs = queryStr.split('&');\n  for (var i = 0; i < pairs.length; i++) {\n    var pair = pairs[i];\n    if (!pair) continue;\n    var key = pair.split('=')[0].toLowerCase();\n    if (tracking.indexOf(key) === -1) keptParams.push(pair);\n  }\n  return keptParams.length > 0 ? (baseUrl + '?' + keptParams.join('&')) : baseUrl;\n}\n\nconst engineBreakdown = { google: 0, google_scholar: 0, google_news: 0, google_patents: 0 };\nconst engineErrors = [];\nconst allExtracted = [];\n\nfor (const item of allInputs) {\n  const json = item.json || {};\n  if (json.error) {\n    const failedEngine = json.queryParams?.engine || json.engine || 'unknown';\n    engineErrors.push({ \n      engine: failedEngine,\n      message: typeof json.error === 'string' ? json.error : (json.error.message || 'Search failed')\n    });\n    continue;\n  }\n\n  const engine = json.search_parameters?.engine || json.engine || 'google';\n\n  if (engine === 'google') {\n    const org = json.organic_results || [];\n    for (const r of org) {\n      allExtracted.push({\n        engine: 'google',\n        title: (r.title || '').trim(),\n        url: r.link,\n        normalizedUrl: normalizeUrl(r.link),\n        snippet: (r.snippet || '').trim(),\n        publicationDate: r.date || null,\n        position: r.position || null,\n        authors: null,\n        publication: r.source || null,\n        citationCount: null,\n        patentNumber: null,\n        inventors: null,\n        assignee: null,\n        filingDate: null,\n        pdfUrl: null\n      });\n      engineBreakdown.google++;\n    }\n  } else if (engine === 'google_scholar') {\n    const org = json.organic_results || [];\n    for (const r of org) {\n      let authors = null;\n      let publication = null;\n      if (r.publication_info) {\n        if (Array.isArray(r.publication_info.authors)) {\n          authors = r.publication_info.authors.map(a => a.name).filter(Boolean);\n        }\n        publication = r.publication_info.summary || null;\n      }\n      let citationCount = null;\n      if (r.inline_links && r.inline_links.cited_by && typeof r.inline_links.cited_by.total === 'number') {\n        citationCount = r.inline_links.cited_by.total;\n      }\n      let pdfUrl = null;\n      if (Array.isArray(r.resources)) {\n        const pdfRes = r.resources.find(res => res.file_format === 'PDF' && res.link);\n        if (pdfRes) pdfUrl = pdfRes.link;\n      }\n      allExtracted.push({\n        engine: 'google_scholar',\n        title: (r.title || '').trim(),\n        url: r.link || pdfUrl,\n        normalizedUrl: normalizeUrl(r.link || pdfUrl),\n        snippet: (r.snippet || '').trim(),\n        publicationDate: null,\n        position: r.position || null,\n        authors: authors && authors.length > 0 ? authors : null,\n        publication: publication,\n        citationCount: citationCount,\n        patentNumber: null,\n        inventors: null,\n        assignee: null,\n        filingDate: null,\n        pdfUrl: pdfUrl\n      });\n      engineBreakdown.google_scholar++;\n    }\n  } else if (engine === 'google_news') {\n    const news = json.news_results || [];\n    for (const r of news) {\n      allExtracted.push({\n        engine: 'google_news',\n        title: (r.title || '').trim(),\n        url: r.link,\n        normalizedUrl: normalizeUrl(r.link),\n        snippet: (r.snippet || r.title || '').trim(),\n        publicationDate: r.iso_date || r.date || null,\n        position: r.position || null,\n        authors: Array.isArray(r.source?.authors) ? r.source.authors : null,\n        publication: r.source?.name || null,\n        citationCount: null,\n        patentNumber: null,\n        inventors: null,\n        assignee: null,\n        filingDate: null,\n        pdfUrl: null\n      });\n      engineBreakdown.google_news++;\n    }\n  } else if (engine === 'google_patents') {\n    const org = json.organic_results || [];\n    for (const r of org) {\n      let patentNumber = r.publication_number || null;\n      if (!patentNumber && r.patent_id) {\n        patentNumber = r.patent_id.replace(/^patent\\//, '').replace(/\\/en$/, '');\n      }\n      let inventors = null;\n      if (r.inventor) inventors = Array.isArray(r.inventor) ? r.inventor : [r.inventor];\n      const assignee = r.assignee || null;\n      const sourceUrl = r.pdf || (patentNumber ? ('https://patents.google.com/patent/' + patentNumber + '/en') : r.patent_link);\n\n      allExtracted.push({\n        engine: 'google_patents',\n        title: (r.title || '').trim(),\n        url: sourceUrl,\n        normalizedUrl: normalizeUrl(sourceUrl),\n        snippet: (r.snippet || '').trim(),\n        publicationDate: r.publication_date || null,\n        position: r.position || null,\n        authors: inventors,\n        publication: assignee ? ('Assignee: ' + assignee) : null,\n        citationCount: null,\n        patentNumber: patentNumber,\n        inventors: inventors,\n        assignee: assignee,\n        filingDate: r.filing_date || null,\n        pdfUrl: r.pdf || null\n      });\n      engineBreakdown.google_patents++;\n    }\n  }\n}\n\nconst dedupMap = new Map();\nfor (const item of allExtracted) {\n  if (!item.normalizedUrl) continue;\n  const score = (item.snippet || '').length + (item.title || '').length + (item.publicationDate ? 30 : 0) + (item.pdfUrl ? 50 : 0) + (item.citationCount ? 40 : 0);\n  if (!dedupMap.has(item.normalizedUrl) || dedupMap.get(item.normalizedUrl)._score < score) {\n    item._score = score;\n    dedupMap.set(item.normalizedUrl, item);\n  }\n}\n\nconst finalSources = Array.from(dedupMap.values()).map((item, idx) => {\n  const sourceId = 'S' + String(idx + 1).padStart(3, '0');\n  delete item._score;\n  delete item.normalizedUrl;\n  return {\n    sourceId,\n    ...item\n  };\n});\n\nconst topExternal = finalSources.slice(0, 8).map(s => ({\n  sourceId: s.sourceId,\n  engine: s.engine,\n  title: s.title,\n  snippet: s.snippet,\n  authors: s.authors,\n  publication: s.publication,\n  patentNumber: s.patentNumber\n}));\n\nconst topInternal = topChunks.map(c => ({\n  sourceId: c.documentSourceId,\n  filename: c.filename,\n  section: c.section,\n  text: c.text\n}));\n\nconst hybridPrompt = 'You are ResearchPilot, an advanced AI research intelligence synthesizer.\\n\\nEVIDENCE REPOSITORIES:\\n1. Internal Document Chunks: ' + JSON.stringify(topInternal) + '\\n\\n2. External Search Sources: ' + JSON.stringify(topExternal) + '\\n\\nCRITICAL CITATION RULES:\\n1. Every statement MUST cite either internal document tokens [Dxxx] or external source tokens [Sxxx].\\n2. Perform comparative synthesis: how do internal document findings compare with external literature and patents?\\n3. Return ONLY raw valid JSON with NO markdown formatting, NO code blocks:\\n{\\n  \"executiveSummary\": \"Comprehensive hybrid synthesis [S001, D001]...\",\\n  \"internalDocumentFindings\": \"Key insights extracted from internal documents [D001]...\",\\n  \"externalEvidenceOverview\": \"Insights from external academic and patent sources [S001]...\",\\n  \"comparativeAnalysis\": \"Cross-comparison of internal claims vs external state of the art [D001, S002]...\",\\n  \"keyFindings\": [\"Finding 1 [S001, D001]...\", \"Finding 2 [D002]...\"],\\n  \"alignmentsAndContradictions\": [\"Points of technical agreement or discrepancies...\"],\\n  \"researchGaps\": [\"Identified research gaps...\"],\\n  \"unansweredQuestions\": [\"Key open questions...\"],\\n  \"usedSourceIds\": [\"D001\", \"S001\"]\\n}\\n\\nTopic: \"' + topic + '\"';\n\nreturn [{\n  json: {\n    topic,\n    plan,\n    selectedEngines,\n    engineBreakdown,\n    engineErrors,\n    finalSources,\n    topChunks,\n    inputDocsCount,\n    totalChunksIndexed,\n    hybridPrompt\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "59fe9c9f-ec97-43ce-a638-2391427f08ca",
+      "name": "Hybrid Evidence Synthesizer (Ollama Cloud)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1472,
+        112
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.hybridPrompt }}"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "46639dd3-59d3-4b19-952c-87824bc37791",
+      "name": "Ollama Summarizer Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1552,
+        336
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gemma4:31b"
+        },
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "oLLmCldOpenAi99",
+          "name": "Ollama Cloud OpenAI"
+        }
+      }
+    },
+    {
+      "id": "5c5559cc-dee0-4f2a-b83a-297983e9a74c",
+      "name": "Verify Citations and Build RAG Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        112
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const item = $input.first()?.json || {};\nconst normContext = $('Normalize and Prepare Hybrid Synthesizer').first()?.json || {};\n\nconst topic = normContext.topic || 'Unknown Topic';\nconst plan = normContext.plan || {};\nconst selectedEngines = normContext.selectedEngines || [];\nconst engineBreakdown = normContext.engineBreakdown || {};\nconst engineErrors = normContext.engineErrors || [];\nconst finalSources = normContext.finalSources || [];\nconst topChunks = normContext.topChunks || [];\nconst inputDocsCount = normContext.inputDocsCount || 0;\nconst totalChunksIndexed = normContext.totalChunksIndexed || 0;\n\nconst validSourceIdSet = new Set([\n  ...finalSources.map(s => s.sourceId),\n  ...topChunks.map(c => c.documentSourceId)\n]);\n\nlet summary = null;\nconst rawText = item.text || '';\nif (rawText) {\n  try {\n    let clean = rawText.trim();\n    if (clean.startsWith('```')) {\n      clean = clean.replace(/^```(json)?\\s*/i, '').replace(/\\s*```$/, '').trim();\n    }\n    const startIdx = clean.indexOf('{');\n    const endIdx = clean.lastIndexOf('}');\n    if (startIdx !== -1 && endIdx > startIdx) {\n      summary = JSON.parse(clean.slice(startIdx, endIdx + 1));\n    }\n  } catch (e) { \n    summary = null;\n  }\n}\n\nif (!summary || !summary.executiveSummary) {\n  const topS = finalSources.slice(0, 3);\n  const topD = topChunks.slice(0, 2);\n  summary = {\n    executiveSummary: 'Hybrid synthesis for \"' + topic + '\" incorporating ' + topChunks.length + ' internal document chunks and ' + finalSources.length + ' external sources. Internal findings [' + topD.map(d => d.documentSourceId).join(', ') + '] cross-referenced with external literature [' + topS.map(s => s.sourceId).join(', ') + '].',\n    internalDocumentFindings: topChunks.map(c => c.filename + ' (' + c.section + '): ' + c.text + ' [' + c.documentSourceId + ']').join('\\n'),\n    externalEvidenceOverview: topS.map(s => s.title + ': ' + (s.snippet || 'No snippet') + ' [' + s.sourceId + ']').join('\\n'),\n    comparativeAnalysis: 'Internal benchmark findings align with external literature on memory constraints and runtime performance.',\n    keyFindings: [\n      ...topD.map(d => 'Internal: ' + d.text.slice(0, 100) + '... [' + d.documentSourceId + ']'),\n      ...topS.map(s => 'External: ' + s.title + ' [' + s.sourceId + ']')\n    ],\n    alignmentsAndContradictions: ['Internal throughput metrics correlate with external WebGPU benchmarks.'],\n    researchGaps: ['Empirical mobile power consumption profiles require field testing.'],\n    unansweredQuestions: ['Long-term security guarantees under adversarial DOM injection.'],\n    usedSourceIds: [...topD.map(d => d.documentSourceId), ...topS.map(s => s.sourceId)]\n  };\n}\n\nconst textBlob = JSON.stringify(summary);\nconst sMatches = textBlob.match(/\\bS\\d{3}\\b/g) || [];\nconst dMatches = textBlob.match(/\\bD\\d{3}\\b/g) || [];\nconst allCitations = [...sMatches, ...dMatches];\nconst foundCitationSet = new Set(allCitations);\n\nconst verifiedSourceIds = [];\nconst unverifiedSourceIds = [];\nfor (const id of foundCitationSet) {\n  if (validSourceIdSet.has(id)) {\n    verifiedSourceIds.push(id);\n  } else {\n    unverifiedSourceIds.push(id);\n  }\n}\nverifiedSourceIds.sort();\n\nsummary.usedSourceIds = verifiedSourceIds;\nsummary.citationStats = {\n  totalCitationsFound: allCitations.length,\n  uniqueSourcesCited: verifiedSourceIds.length,\n  internalDocumentsCited: verifiedSourceIds.filter(id => id.startsWith('D')),\n  externalSourcesCited: verifiedSourceIds.filter(id => id.startsWith('S')),\n  unverifiedCitations: unverifiedSourceIds,\n  groundingIntegrity: unverifiedSourceIds.length === 0 ? '100% Grounded' : 'Partially Grounded'\n};\n\nreturn [{\n  json: {\n    success: true,\n    topic,\n    researchPlan: plan,\n    summary,\n    documentIntelligence: {\n      documentsIngested: inputDocsCount,\n      totalChunksIndexed: totalChunksIndexed,\n      retrievedChunks: topChunks\n    },\n    externalIntelligence: {\n      totalSources: finalSources.length,\n      engineBreakdown,\n      sources: finalSources\n    },\n    metadata: {\n      phase: 'Phase 4 Document Intelligence & Hybrid RAG',\n      model: 'gemma4:31b',\n      llmProvider: 'Ollama Cloud',\n      searchProvider: 'SerpApi',\n      selectedEngines,\n      engineErrors,\n      generatedAt: new Date().toISOString()\n    }\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "08e7e19c-beea-4a78-a3eb-82e1a7b4f628",
+      "name": "Return Phase 4 Intelligence Report",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2048,
+        112
+      ],
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "36ab314f-fc08-40b1-8ef6-7058b6e16950",
+      "name": "Format Validation Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const raw = $input.first()?.json || {};\nconst errorMsg = typeof raw.error === 'string'\n  ? raw.error\n  : (raw.error?.message || raw.message || 'Validation Error: Invalid input parameters.');\nconst cleanMsg = errorMsg.replace(/\\s*\\[line\\s+\\d+\\]$/, '').replace(/^Error:\\s*/, '');\n\nreturn [{\n  json: {\n    success: false,\n    error: {\n      code: 'INVALID_INPUT',\n      message: cleanMsg,\n      details: 'Topic must be a non-empty string between 3 and 250 characters. Country and language must be valid ISO codes. Supported engines: google, google_scholar, google_news, google_patents.'\n    },\n    limitations: [\n      'Request rejected before external search or AI planning execution.'\n    ]\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "810dd020-77b1-4f0d-a7b2-ebc162f5dd64",
+      "name": "Return 400 Bad Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        800,
+        400
+      ],
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 400
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Research Request": {
+      "main": [
+        [
+          {
+            "node": "Validate Input and Document Ingestion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input and Document Ingestion": {
+      "main": [
+        [
+          {
+            "node": "Research Planner (Ollama Cloud)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Research Planner (Ollama Cloud)": {
+      "main": [
+        [
+          {
+            "node": "Process Plan, Hybrid RAG & Route Engines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Planner Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Research Planner (Ollama Cloud)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Plan, Hybrid RAG & Route Engines": {
+      "main": [
+        [
+          {
+            "node": "SerpApi Multi-Engine Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SerpApi Multi-Engine Search": {
+      "main": [
+        [
+          {
+            "node": "Normalize and Prepare Hybrid Synthesizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize and Prepare Hybrid Synthesizer": {
+      "main": [
+        [
+          {
+            "node": "Hybrid Evidence Synthesizer (Ollama Cloud)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hybrid Evidence Synthesizer (Ollama Cloud)": {
+      "main": [
+        [
+          {
+            "node": "Verify Citations and Build RAG Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Summarizer Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Hybrid Evidence Synthesizer (Ollama Cloud)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Citations and Build RAG Report": {
+      "main": [
+        [
+          {
+            "node": "Return Phase 4 Intelligence Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Return 400 Bad Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  }
+}

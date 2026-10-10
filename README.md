@@ -7,109 +7,94 @@
 [![n8n](https://img.shields.io/badge/n8n-Workflow_Automation-EA4B71?style=for-the-badge&logo=n8n)](https://n8n.io/)
 [![Ollama](https://img.shields.io/badge/Ollama-gemma4:31b-white?style=for-the-badge&logo=ollama)](https://ollama.com/)
 
-**ResearchPilot** is an autonomous multi-agent research intelligence platform designed to turn complex research questions into structured scientific intelligence dossiers, multi-dimensional comparative matrices, potential research gaps, and actionable experimental directions.
+**ResearchPilot** is an autonomous multi-agent research intelligence platform designed for the **SerpApi India Hackathon 2026 (Track 5: Knowledge & Public Interest)**. It turns complex research inquiries into evidence-backed scientific intelligence dossiers, multi-dimensional comparative matrices, fact-checked citation graphs, and actionable experimental directions in plain, simple English.
 
 ---
 
 ## 🌟 Key Features
 
-### 1. Dual-Mode Multi-Agent Pipeline
-* **🏠 Localhost (`http://localhost:3000`):** Automatically routes to your local **n8n Autonomous Workflow Engine** (`http://localhost:5678`), orchestrating 12 sequential agent reasoning nodes.
-* **☁️ Cloud (`Firebase Hosting`):** Runs the high-speed direct cloud AI engine powered by **Google Gemini** and **Ollama**, executing all sequential stages in ~12 seconds with sub-second generation.
+### 1. 🤖 Mini AI Chatbot with Persistent Memory (PilotBot)
+* **Powered by Ollama Cloud:** Integrated with Ollama key (`gemma4:31b`) and intelligent contextual responder.
+* **Conversational Memory:** Remembers all past user questions, conversation context, and user preferences across turns.
+* **Persistent Storage:** Chat history is automatically stored in `localStorage`, persisting across page refreshes and browser sessions.
+* **Everyday Simple English:** Answers are structured in friendly, easy-to-read everyday words (no complex academic or AI jargon).
+* **Interactive Controls:** Floating pulse widget, quick prompt suggestions, copy-to-clipboard, export chat history (`.txt`), and clear memory controls.
 
-### 2. Autonomous Multi-Agent Reasoning Chain
-1. **Research Question & Context Builder:** Gathers title, hypothesis question, domain, objective, documents, and web links.
-2. **Research Planner Agent:** Formulates structured investigation areas, analytical decomposition, and workflow milestones.
-3. **Paper & Document Analyzer Agent:** Analyzes provided documents, datasets, methodologies, and limitations with anti-hallucination guards.
-4. **Research Comparison Agent:** Cross-evaluates methodologies, datasets, findings, and trade-offs.
-5. **Relationship Discovery Agent:** Maps theoretical links, methodological affinities, and benchmark overlaps.
-6. **Potential Research Gap Detection Agent:** Detects candidate gaps using calibrated confidence scores ($0.0$ to $1.0$).
-7. **Research Direction Generator Agent:** Generates actionable titles, descriptions, reasoning, and evidence citations.
-8. **Research Validation Agent & Gatekeeper:** Verifies empirical consistency and checks for ungrounded claims.
+### 2. 🔍 Multi-Engine Autonomous Search
+* **Engines Supported:** Google Search, Google Scholar, Google News, and Google Patents via SerpApi.
+* **Autonomous Pipeline:** Auto-generates engine-tailored queries, extracts titles, abstracts, snippets, citation counts, and patent IDs.
+* **Deduplication & Grounding:** Deduplicates across sources and enforces strict citation tokens (`[S001]`, `[D001]`).
 
-### 3. Interactive Copilot Chatbot (Ollama)
-* **Model:** Powered by `gemma4:31b` via the Ollama Cloud API.
-* **Context-Aware:** Automatically injects the active workspace's title, hypothesis question, domain, objective, and synthesized findings.
-* **Features:** Floating launcher, quick prompt chips, real-time typing indicators, markdown formatting, copy-to-clipboard, and conversation reset.
+### 3. 📂 Document Intelligence (Up to 50 Files)
+* Upload up to **50 documents, research papers, notes, or PDFs**.
+* Extracts key excerpts, creates document tokens (`[D001]`, `[D002]`), and cross-verifies web findings against your uploaded files.
 
-### 4. Interactive 3D Visualizations (Three.js)
-* **Welcome Page:** Constellation knowledge network with orbital particles and mouse parallax.
-* **Authentication Page:** Dual-ring orbiting portal with smooth geometry transitions.
-* **Workspace Construction:** Molecular assembly that builds nodes dynamically as you fill the workspace form.
-* **Research Hub:** 8-node elliptical intelligence network orbiting a pulsing central core with particle flow simulation.
+### 4. 🌐 Interactive 3D Visuals & Welcome Dashboard
+* **Three.js Particle Galaxy:** Smooth ambient 3D particle constellation responding to mouse movement.
+* **Mission Control Dashboard:** Overview cards explaining each step in plain English, with quick preset buttons for India public health and clean energy.
+
+### 5. 🔐 Firebase Authentication & Workspace History
+* **User Authentication:** Firebase Auth with persistent login sessions.
+* **My Saved Searches Workspace:** Automatically saves completed dossiers and searches for quick one-click retrieval.
 
 ---
 
-## 🏗️ 4-Page Architecture
+## 🏗️ Architecture & Technology Stack
 
-1. **Welcome / Landing Page** (`src/pages/WelcomePage.tsx`) — Hero presentation with interactive 3D constellation.
-2. **Login / Registration** (`src/pages/AuthPage.tsx`) — Firebase Authentication with session persistence.
-3. **Create Research Workspace** (`src/pages/CreateWorkspacePage.tsx`) — Project configuration with dynamic 3D molecular assembly.
-4. **Research Workspace** (`src/pages/ResearchWorkspacePage.tsx`) — Synthesized dossier, 2x4 intelligence grid, interactive 3D hub, and Ollama copilot chatbot.
+```mermaid
+graph TD
+  User([User / Browser]) <--> Frontend[React 18 + Vite + Three.js]
+  Frontend <--> Chatbot[PilotBot Mini AI Assistant with Memory]
+  Frontend <--> Firebase[(Firebase Auth & Hosting)]
+  Frontend <--> n8n[n8n Autonomous Orchestrator]
+  n8n <--> SerpApi[SerpApi: Google / Scholar / News / Patents]
+  n8n <--> Ollama[Ollama Cloud: gemma4:31b]
+```
+
+* **Frontend:** React 18, Vite, Tailwind CSS, Lucide Icons, Three.js
+* **Hosting:** Firebase Hosting ([https://researchpilot-d6b95.web.app](https://researchpilot-d6b95.web.app))
+* **Auth:** Firebase Authentication
+* **Backend:** n8n Workflow Automation (`https://15.252.236.234.sslip.io`)
+* **AI/LLM:** Ollama Cloud (`gemma4:31b`)
+* **Search:** SerpApi Multi-Engine Search
 
 ---
 
 ## 🚀 Quick Start Guide
 
 ### Prerequisites
-* Node.js 18+ installed
-* (Optional for local n8n mode) n8n running on port `5678`
+* Node.js 18+
+* npm or bun
 
-### Installation
+### 1. Clone the repository
 ```bash
-# Clone the repository
-git clone https://github.com/jwalithc-png/researchpilot.git
-cd researchpilot
+git clone https://github.com/jwalithc-png/ResearchPilot.git
+cd ResearchPilot
+```
 
-# Install dependencies
+### 2. Install dependencies
+```bash
 npm install
-
-# Set up environment variables
-cp .env.example .env
 ```
 
-### Configure `.env`
-Add your API keys to `.env`:
-```env
-# Firebase Configuration
-VITE_FIREBASE_API_KEY=your_firebase_api_key
-VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your_project_id
-VITE_FIREBASE_STORAGE_BUCKET=your_project.firebasestorage.app
-VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
-VITE_FIREBASE_APP_ID=your_app_id
-
-# AI Model Configuration
-VITE_GEMINI_API_KEY=your_gemini_api_key
-VITE_GEMINI_MODEL=gemini-flash-lite-latest
-
-# Ollama AI Configuration (Chatbot)
-OLLAMA_API_KEY=your_ollama_api_key
-VITE_OLLAMA_API_KEY=your_ollama_api_key
-VITE_OLLAMA_MODEL=gemma4:31b
-```
-
-### Running Locally
+### 3. Run development server
 ```bash
-# Start Vite development server
 npm run dev
 ```
-Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
-### Building for Production
+Open `http://localhost:5173` in your browser.
+
+### 4. Build for production
 ```bash
 npm run build
 ```
 
----
-
-## 🔒 Security & Privacy
-
-* No private keys or secrets are stored in the git repository or exposed client-side.
-* Firebase Authentication protects research workspace data.
-* Workspace documents and intelligence are scoped to the authenticated user UID via Firestore security rules and LocalStorage persistence.
+### 5. Deploy to Firebase Hosting
+```bash
+firebase deploy --only hosting
+```
 
 ---
 
 ## 📄 License
-MIT License. © 2026 ResearchPilot. All rights reserved.
+MIT License. Built for SerpApi India Hackathon 2026.
