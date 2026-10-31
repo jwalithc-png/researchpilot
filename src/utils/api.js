@@ -67,7 +67,35 @@ export async function executeAutonomousResearch({
       throw new Error(message);
     }
 
-    const data = await response.json();
+    const rawText = await response.text();
+    let data = null;
+
+    // Handle pure HTML response seamlessly
+    if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
+      const match = rawText.match(/<script id="researchpilot-data" type="application\/json">([\s\S]*?)<\/script>/);
+      if (match) {
+        try {
+          data = JSON.parse(match[1]);
+        } catch (_) {}
+      }
+      if (!data) {
+        data = {
+          success: true,
+          topic: topic,
+          reportHtml: rawText,
+          reportMarkdown: rawText
+        };
+      } else {
+        data.reportHtml = rawText;
+      }
+    } else {
+      try {
+        data = JSON.parse(rawText);
+      } catch (_) {
+        data = { success: true, reportHtml: rawText, topic: topic };
+      }
+    }
+
     return {
       success: true,
       data,
