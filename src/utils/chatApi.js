@@ -9,6 +9,7 @@ const SETTINGS_KEY = 'researchpilot_chat_settings_gemini_v1';
 
 // Supported AI models
 export const DEFAULT_MODELS = [
+  { id: 'qwen3-vl:4b', name: 'Qwen3-VL 4B (Google Colab T4 GPU)', provider: 'ollama' },
   { id: 'gemini-3.5-flash-lite', name: 'Google Gemini 3.5 Flash Lite (Fastest & Smart)', provider: 'gemini' },
   { id: 'gemini-3.5-flash', name: 'Google Gemini 3.5 Flash (Deep Reasoning)', provider: 'gemini' },
   { id: 'gemini-3.8-flash', name: 'Google Gemini 3.8 Flash (Latest Preview)', provider: 'gemini' }
@@ -242,6 +243,48 @@ CRITICAL RULES:
     role: 'user',
     parts: [{ text: message }]
   });
+
+  // If Colab Ollama GPU model selected, query the live Cloudflare tunnel
+  if (model === 'qwen3-vl:4b' || settings.provider === 'ollama') {
+    try {
+      const colabEndpoint = 'https://sage-combat-system-clubs.trycloudflare.com/api/chat';
+      const colabController = new AbortController();
+      const colabTimeout = setTimeout(() => colabController.abort(), 25000);
+
+      const colabRes = await fetch(colabEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'qwen3-vl:4b',
+          messages: [
+            { role: 'system', content: 'You are PilotBot, an expert scientific research assistant. Explain concepts clearly with verified reasoning.' },
+            { role: 'user', content: message }
+          ],
+          stream: false,
+          options: { num_predict: 350, temperature: 0.1 }
+        }),
+        signal: colabController.signal
+      });
+      clearTimeout(colabTimeout);
+
+      if (colabRes.ok) {
+        const cData = await colabRes.json();
+        const cText = cData.message?.content || cData.message?.thinking;
+        if (cText && cText.trim()) {
+          return {
+            id: 'msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6),
+            role: 'assistant',
+            content: cText.trim(),
+            timestamp: new Date().toISOString(),
+            isLiveAi: true,
+            modelUsed: 'Qwen3-VL 4B (Colab NVIDIA T4 GPU)'
+          };
+        }
+      }
+    } catch (cErr) {
+      console.warn('Colab Ollama call fell back to Gemini/synthesizer:', cErr.message);
+    }
+  }
 
   let apiSuccess = false;
   let replyContent = '';
