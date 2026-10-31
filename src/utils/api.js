@@ -2,7 +2,7 @@
 import { BENCHMARK_DOSSIERS } from './benchmarkData';
 
 const DEFAULT_LOCAL_PROXY = '/api/orchestrator';
-const DIRECT_REMOTE_URL = 'https://15.252.236.234.sslip.io/webhook/researchpilot-orchestrator';
+const DIRECT_REMOTE_URL = 'https://15.252.236.234.sslip.io/webhook/researchpilot-v2';
 
 // In production builds (e.g. Firebase Hosting), direct remote URL is used
 export const PRODUCTION_ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL || DIRECT_REMOTE_URL;
@@ -38,7 +38,9 @@ export async function executeAutonomousResearch({
     maxSources: Number(maxSources) || 20,
     researchDepth: researchDepth || 'deep',
     confidenceThreshold: Number(confidenceThreshold) || 0.75,
-    ...(documents.length > 0 ? { documents } : {})
+    ...(documents.length > 0 ? { documents } : {}),
+    colabTunnelUrl: "https://sage-combat-system-clubs.trycloudflare.com",
+    includeVision: true
   };
 
   const controller = new AbortController();
